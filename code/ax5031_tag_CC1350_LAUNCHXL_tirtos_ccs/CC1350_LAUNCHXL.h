@@ -129,8 +129,14 @@ extern const PIN_Config BoardGpioInitTable[];
 /* SPI Board */
 #define CC1350_LAUNCHXL_SPI0_MISO             IOID_8          /* RF1.20 */
 #define CC1350_LAUNCHXL_SPI0_MOSI             IOID_9          /* RF1.18 */
-#define CC1350_LAUNCHXL_SPI0_CLK              IOID_10         /* RF1.16 */
-#define CC1350_LAUNCHXL_SPI0_CSN              PIN_UNASSIGNED
+
+// NOTE(Andrey): Old code
+//#define CC1350_LAUNCHXL_SPI0_CLK              IOID_10         /* RF1.16 */
+//#define CC1350_LAUNCHXL_SPI0_CSN              PIN_UNASSIGNED
+// NOTE(Andrey): New code
+#define CC1350_LAUNCHXL_SPI0_CLK              IOID_12
+#define CC1350_LAUNCHXL_SPI0_CSN              IOID_11
+
 #define CC1350_LAUNCHXL_SPI1_MISO             PIN_UNASSIGNED
 #define CC1350_LAUNCHXL_SPI1_MOSI             PIN_UNASSIGNED
 #define CC1350_LAUNCHXL_SPI1_CLK              PIN_UNASSIGNED
