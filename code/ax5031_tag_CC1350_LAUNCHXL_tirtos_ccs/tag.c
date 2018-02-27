@@ -14,7 +14,10 @@
 #include <ti/drivers/PIN.h>
 
 #include <ti/sysbios/knl/Task.h>
+#include <ti/sysbios/knl/Semaphore.h>
 #include <ti/sysbios/knl/Clock.h>
+
+#include <ti/sysbios/BIOS.h>
 
 #define SPI_CS_PIN PIN_ID(11)
 
@@ -40,6 +43,11 @@ size_t transmitted_message_length;
 
 #include "keyfile.h"
 
+void handle_spi_error()
+{
+	while (1);
+}
+
 //
 // Code for single transactions. Too slow for 1 Mbps transmission.
 //
@@ -55,7 +63,7 @@ uint16_t doTransaction_ax5031(SPI_Handle handle, uint16_t tx)
 
 	if (!SPI_transfer(handle, &transaction))
 	{
-		while (1);
+		handle_spi_error();
 	}
 
 	return rx;
@@ -92,7 +100,7 @@ uint16_t axCreateWriteFrame(uint8_t address, uint8_t value)
 // If turn_pwrmode_fulltx is true - the transmitter will be turned on by the funciton
 // after pre-filling the FIFO with data. This will avoid fifo underflows on start.
 // The current implementation may read up to 31 bytes after the end of the data.
-// This happenes because we avoid any if statements inside the loop to be quick enough.
+// This happens because we avoid any if statements inside the loop to be quick enough.
 void axTransmit(SPI_Handle handle, uint8_t *data, size_t length, int turn_pwrmode_fulltx)
 {
 	const uint8_t fifocount_address = 0x35;
@@ -149,7 +157,7 @@ void axTransmit(SPI_Handle handle, uint8_t *data, size_t length, int turn_pwrmod
 
 			for (i = 0; i < message_bytes_sent; i++)
 			{
-			    txBufferBytes[(i << 1)] = data[sent + i];
+				txBufferBytes[(i << 1)] = data[sent + i];
 				txBufferBytes[(i << 1) + 1] = fifodata_write_instr; // Assume little endianness
 			}
 
@@ -171,7 +179,7 @@ void axTransmit(SPI_Handle handle, uint8_t *data, size_t length, int turn_pwrmod
 
 	if (failures)
 	{
-		while (1);
+		handle_spi_error();
 	}
 
 	fifo_underflows += shifted_underflows / fifoctrl_fifo_under_mask;
@@ -231,7 +239,7 @@ void startupAndTransmit(SPI_Handle handle)
 
 	{
 		const uint8_t psk_modulation_non_shaped = 0b100;
-		const uint8_t psk_modulation_shaped = 0b101;
+		//const uint8_t psk_modulation_shaped = 0b101;
 		uint8_t modulation_address = 0x10;
 		uint8_t modulation = axRead(handle, modulation_address);
 		axWrite(handle, modulation_address, (modulation & (1 << 7)) + psk_modulation_non_shaped);
@@ -266,7 +274,7 @@ void startupAndTransmit(SPI_Handle handle)
 
 	if (pllranging & (1 << 5))
 	{
-		while (1);
+		handle_spi_error();
 	}
 
 	// axWrite(handle, AX_PWRMODE, AX_PWRMODE_FULLTX);
@@ -306,6 +314,13 @@ void createMessage()
 	transmitted_message_length = preamble_length + code_length + postamble_length;
 }
 
+Semaphore_Handle clockTickSemaphore;
+
+void clockTickCallback(xdc_UArg arg)
+{
+	Semaphore_post(clockTickSemaphore);
+}
+
 void *mainThread(void *arg0)
 {
 	/* Call driver init functions */
@@ -318,12 +333,14 @@ void *mainThread(void *arg0)
 
 	SPI_Handle handle;
 	SPI_Params params;
+	Clock_Handle clockHandle;
+	Clock_Params clockParams;
 
 	SPI_Params_init(&params);
 	params.transferMode = SPI_MODE_BLOCKING;
 	params.transferTimeout = 1 * 1000;
 	params.mode = SPI_MASTER;
-	params.bitRate = 4500 * 1000;
+	params.bitRate = 4500 * 1000; // Beware: lower bitrates may cause FIFO underflows
 	params.dataSize = 16;
 	params.frameFormat = SPI_POL0_PHA0;
 
@@ -331,7 +348,7 @@ void *mainThread(void *arg0)
 
 	if (!handle)
 	{
-		while (1);
+		handle_spi_error();
 	}
 
 	createMessage();
@@ -340,10 +357,18 @@ void *mainThread(void *arg0)
 	axWrite(handle, 0x1, ~scratch);
 	uint8_t scratch2 = axRead(handle, 0x1);
 
+	clockTickSemaphore = Semaphore_create(0, NULL, NULL);
+
+	Clock_Params_init(&clockParams);
+	clockParams.period = 1000 * 1000 / Clock_tickPeriod;
+
+	clockHandle = Clock_create(clockTickCallback, 0, &clockParams, NULL);
+	Clock_start(clockHandle);
+
 	while (1)
 	{
+		Semaphore_pend(clockTickSemaphore, BIOS_WAIT_FOREVER);
+
 		startupAndTransmit(handle);
-		// TODO: Set a timer to transmit exactly every second
-		Task_sleep(1000 * 1000 / Clock_tickPeriod);
 	}
 }
