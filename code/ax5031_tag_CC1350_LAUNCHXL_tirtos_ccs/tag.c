@@ -21,11 +21,6 @@
 /* Board Header file */
 #include <Board.h>
 
-PIN_Config pinConfigTable[] = {
-	SPI_CS_PIN | PIN_GPIO_OUTPUT_EN | PIN_GPIO_HIGH | PIN_PUSHPULL | PIN_DRVSTR_MAX,
-	PIN_TERMINATE
-};
-
 #define AX_PWRMODE				0x2
 #define AX_PWRMODE_POWERDOWN	0b0000
 #define AX_PWRMODE_VREGON		0b0100
@@ -38,12 +33,12 @@ int fifo_overflows = 0;
 
 uint16_t axTXBuffer[64];
 uint16_t axRXBuffer[64];
-int debugbuff[64];
 
 uint8_t transmitted_message[9000 / 8];
+uint8_t debugbuff[9000 / 8];
 size_t transmitted_message_length;
 
-#include "code.h"
+#include "keyfile.h"
 
 //
 // Code for single transactions. Too slow for 1 Mbps transmission.
@@ -96,24 +91,46 @@ uint16_t axCreateWriteFrame(uint8_t address, uint8_t value)
 
 // If turn_pwrmode_fulltx is true - the transmitter will be turned on by the funciton
 // after pre-filling the FIFO with data. This will avoid fifo underflows on start.
+// The current implementation may read up to 31 bytes after the end of the data.
+// This happenes because we avoid any if statements inside the loop to be quick enough.
 void axTransmit(SPI_Handle handle, uint8_t *data, size_t length, int turn_pwrmode_fulltx)
 {
 	const uint8_t fifocount_address = 0x35;
 	const uint8_t fifocount_mask = 0x3F;
-	const uint8_t fifodata_address = 0x5;
 
 	const uint8_t fifoctrl_address = 0x4;
-	const uint8_t fifoctrl_fifo_under_bit = 4;
-	const uint8_t fifoctrl_fifo_over_bit = 5;
+	const uint8_t fifoctrl_fifo_under_mask = 1 << 4;
+	const uint8_t fifoctrl_fifo_over_mask = 1 << 5;
+	const uint16_t fifoctrl_real_instr = axCreateReadFrame(fifoctrl_address);
+	const uint16_t fifocount_real_instr = axCreateReadFrame(fifocount_address);
+
+	const uint8_t fifodata_address = 0x5;
+	const uint8_t fifodata_write_instr = (1 << 7) + fifodata_address;
 
 	const size_t fifo_size = 32;
 
 	SPI_Transaction transaction;
+	transaction.txBuf = axTXBuffer;
+	transaction.rxBuf = axRXBuffer;
+	uint8_t *txBufferBytes = (uint8_t*)axTXBuffer;
+
 	uint8_t fifocount;
 	int sent = 0;
+	int shifted_overflows = 0;
+	int shifted_underflows = 0;
+	int failures = 0;
 
 	axRead(handle, fifoctrl_address); // Clear the underflow bit
 	fifocount = axRead(handle, fifocount_address) & fifocount_mask;
+
+	// We will place the command to begin transmitting at the end
+	// of the expected transaction.
+	if (turn_pwrmode_fulltx)
+	{
+		int message_bytes_sent = fifo_size - fifocount;
+		axTXBuffer[message_bytes_sent + 2] = axCreateWriteFrame(AX_PWRMODE, AX_PWRMODE_FULLTX);
+		turn_pwrmode_fulltx = 1;
+	}
 
 	// for testing
 	int repeatRounds = 1;
@@ -123,44 +140,42 @@ void axTransmit(SPI_Handle handle, uint8_t *data, size_t length, int turn_pwrmod
 		sent = 0;
 		while (sent < length)
 		{
-			int this_batch_size = fifo_size - fifocount;
+			int message_bytes_sent = fifo_size - fifocount;
+			int transaction_size = message_bytes_sent + 2 + turn_pwrmode_fulltx;
 			int i;
 
-			for (i = 0; i < this_batch_size; i++)
-			{
-				axTXBuffer[i] = axCreateWriteFrame(fifodata_address, data[sent + i]);
-			}
-			sent += this_batch_size;
+			// We increase the transaction size by 1, and now we can zero the variable.
+			turn_pwrmode_fulltx = 0;
 
-			if (turn_pwrmode_fulltx)
+			for (i = 0; i < message_bytes_sent; i++)
 			{
-				this_batch_size++;
-				axTXBuffer[this_batch_size - 1] = axCreateWriteFrame(AX_PWRMODE, AX_PWRMODE_FULLTX);
-				turn_pwrmode_fulltx = 0;
+			    txBufferBytes[(i << 1)] = data[sent + i];
+				txBufferBytes[(i << 1) + 1] = fifodata_write_instr; // Assume little endianness
 			}
 
-			axTXBuffer[this_batch_size++] = axCreateReadFrame(fifoctrl_address);
-			axTXBuffer[this_batch_size] = axCreateReadFrame(fifocount_address);
+			sent += message_bytes_sent;
 
-			transaction.count = this_batch_size + 1;
-			transaction.txBuf = axTXBuffer;
-			transaction.rxBuf = axRXBuffer;
+			axTXBuffer[message_bytes_sent] = fifoctrl_real_instr;
+			axTXBuffer[message_bytes_sent + 1] = fifocount_real_instr;
 
-			if (!SPI_transfer(handle, &transaction) || transaction.count != this_batch_size + 1)
-			{
-				while (1);
-			}
+			transaction.count = transaction_size;
 
-//			if (axRXBuffer[this_batch_size - 1] & (1 << fifoctrl_fifo_under_bit))
-//			{
-//			    debugbuff[fifo_underflows] = repeatRounds * 10000 + sent;
-//			}
+			failures += !SPI_transfer(handle, &transaction);
+			failures += transaction_size - transaction.count;
 
-			fifocount = axRXBuffer[this_batch_size] & fifocount_mask;
-			fifo_underflows += !!(axRXBuffer[this_batch_size - 1] & (1 << fifoctrl_fifo_under_bit));
-			fifo_overflows += !!(axRXBuffer[this_batch_size - 1] & (1 << fifoctrl_fifo_over_bit));
+			fifocount = axRXBuffer[message_bytes_sent + 1] & fifocount_mask;
+			shifted_underflows += axRXBuffer[message_bytes_sent] & fifoctrl_fifo_under_mask;
+			shifted_overflows += axRXBuffer[message_bytes_sent] & fifoctrl_fifo_over_mask;
 		}
 	}
+
+	if (failures)
+	{
+		while (1);
+	}
+
+	fifo_underflows += shifted_underflows / fifoctrl_fifo_under_mask;
+	fifo_overflows += shifted_overflows / fifoctrl_fifo_over_mask;
 }
 
 void startupAndTransmit(SPI_Handle handle)
@@ -293,22 +308,22 @@ void createMessage()
 
 void *mainThread(void *arg0)
 {
-    /* Call driver init functions */
-    // GPIO_init();
-    // I2C_init();
-    // SDSPI_init();
-    SPI_init();
-    // UART_init();
-    // Watchdog_init();
+	/* Call driver init functions */
+	// GPIO_init();
+	// I2C_init();
+	// SDSPI_init();
+	SPI_init();
+	// UART_init();
+	// Watchdog_init();
 
 	SPI_Handle handle;
 	SPI_Params params;
 
 	SPI_Params_init(&params);
 	params.transferMode = SPI_MODE_BLOCKING;
-	params.transferTimeout = 10 * 1000;
+	params.transferTimeout = 1 * 1000;
 	params.mode = SPI_MASTER;
-	params.bitRate = 4 * 1000 * 1000;
+	params.bitRate = 4500 * 1000;
 	params.dataSize = 16;
 	params.frameFormat = SPI_POL0_PHA0;
 
