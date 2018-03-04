@@ -41,7 +41,7 @@ uint8_t transmitted_message[9000 / 8];
 uint8_t debugbuff[9000 / 8];
 size_t transmitted_message_length;
 
-#include "keyfile.h"
+#include "key_srsha1_972002000555.h"
 
 void handle_spi_error()
 {
