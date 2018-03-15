@@ -1,0 +1,64 @@
+body {
+    background-color: #f9f9f9;
+}
+
+.page {
+	padding: 0.5em 2.2em 0.5em 2.2em;
+
+    background-color: #ffffff;
+
+	border: 1px solid lightgray;
+
+	/* NOTE(Andrey): Taken from GitLab's stylesheet */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    font-size: 0.9em;
+}
+
+article {
+    margin-top: 4em;
+}
+
+@media only screen and (min-device-width: 600px) {
+	.page{
+		max-width: 40em;
+		margin: auto;
+	}
+}
+
+h1 {
+    text-align: center;
+    color: #961016;
+    font-size: 1em;
+}
+
+h2 {
+    font-size: 1em;
+    /*font-weight: normal;*/
+}
+
+p {
+    margin-left: 1.6em;
+}
+
+nav {
+    font-size: 1em;
+	text-align: right;
+}
+
+nav a {
+	margin: 0 0.7em;
+	font-size: 1.1em;
+}
+
+img {
+	width: 100%;
+}
+
+figure {
+	margin: 0.1em 1.6em;
+}
+
+figcaption {
+	text-align: center;
+	font-style: italic;
+}

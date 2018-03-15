@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="author" content="Andrey Leshenko">
+    <meta charset="utf-8">
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+<body>
+	<p></p>
+    <div class="page">
+		<article>
+<h1 id="ax5031-prototype-transmitter">AX5031 Prototype Transmitter</h1>
+<h2 id="background">Background</h2>
+<p>ATLAS is a reverse GPS wildlife localization system developed at Tel Aviv University. The system makes use of small tags that are attached to wild animals, and that transmit a fixed code every second. Historically, these tags had a CC1350 like TI MCU with built-in radio, which they used for transmitting FSK modulated signals.</p>
+<p>Theoretical research showed that PSK modulation detected by other techniques can give more accurate and noise resistant tracking. While the CC1350 radio doesn’t support PSK modulation, PSK-capble external transmitters are available. We found the AX5031 transmitter which looked promising. It can transmit PSK, and is controlled via SPI.</p>
+<h2 id="goal">Goal</h2>
+<p>The goal of this project was to create a prototype ATLAS tag using the CC1350 LaunchPad and AX5031 in PSK transmission mode. If the prototype performed well in tests, it could be used to further develop the next generation of ATLAS tags.</p>
+<h2 id="hardware-setup">Hardware Setup</h2>
+<p>Prof. Sivan Toledo designed a custom testing circuit board for the AX5031 transmitter. The board has the necessary SPI connections and antenna circuitry. It can be easily connected to the CC1350 launchpad. It can be seen in the photo below:</p>
+<figure>
+<img src="images/prototype_small.jpg" alt="The Prototype Transmitter (CC1350 Launchpad + AX5031)" /><figcaption>The Prototype Transmitter (CC1350 Launchpad + AX5031)</figcaption>
+</figure>
+<h2 id="basic-spi-communication-and-transmission">Basic SPI Communication and Transmission</h2>
+<p>Connecting to the transmitter using SPI wans’t very difficult. The AX5031 programming manual explains in detail how to read and write its registers, and documents the use of each register. It was required to change the SPI pins on the CC1350 from their defaults, and to enable the chip select pin.</p>
+<p>By following the programming manual, the transmitter could be configured and made to transmit <em>something</em>.</p>
+<h2 id="transmitting-fast-enough">Transmitting Fast Enough</h2>
+<p>Soon enough it turned out that when transmitting at the required symbol rate, transmissions were taking way more time than expected and that the transmission FIFO was reporting constant underflows. Even with the transmitter detached, the SPI writes were too slow. Analysing the SPI lines using an oscilloscope showed that while SPI transactions themselves are at the required speed, there is a very long delay between different transactions that comes from the SPI driver code.</p>
+<p>The solution was to use the SPI driver in batch mode, executing an array of many write transactions at a time. This modification, and further optimisation of the transmission code solved the fast transmission problem, and allowed the code to transmit at full speed with no FIFO underflows.</p>
+<h2 id="analysis-using-a-spectrum-analyser">Analysis Using a Spectrum Analyser</h2>
+<p>The characteristics of the transmission could be analysed by the Spectrum Analyser that is present at the lab. This device essentially shows the frequency spectrum of radio signals that go into it. Such analysis showed that the transmission were at the required frequency, and that the real transmission power was as configured by the code. Below is the spectrum of the PSK transmission, as shown by the device:</p>
+<figure>
+<img src="images/spectrum_small.jpg" alt="Transmission Spectrum (Frequency: 434MHz, Span: 30MHz)" /><figcaption>Transmission Spectrum (Frequency: 434MHz, Span: 30MHz)</figcaption>
+</figure>
+<h2 id="analysis-in-matlab">Analysis in MATLAB</h2>
+<p>The next step was to record some of the transmission, and to analyze them in MATLAB. The analysis showed that the transmissions fulfill the requirements of ATLAS. There was a time error in frequency and symbol rate that happens because of frequency errors in the oscillator used by the transmitter, but that was expected.</p>
+<figure>
+<img src="images/in_matlab.svg" alt="Recorded Signal Alligned with the Expected Signal" /><figcaption>Recorded Signal Alligned with the Expected Signal</figcaption>
+</figure>
+<h2 id="detection-in-atlas">Detection in ATLAS</h2>
+<p>Some of the new detection and tracking algorithms have been implemented in ATLAS, and already work with the prototype tag. As of March 2018 the remaining parts are in active development, and will hopefully be implemented in the near future.</p>
+<h2 id="summary">Summary</h2>
+<p>The following functionality was implemented:</p>
+<ul>
+<li>Configuring and turning on the SPI driver on the CC1350.</li>
+<li>Reading and writing registers on the AX5031 transmitter by sending commands through SPI.</li>
+<li>Configuring the transmitter and running the full startup sequence.</li>
+<li>Efficiently feeding data into the transmitter while avoiding FIFO underflows.</li>
+<li>Doing the transmission cycle in fixed intervals of 1000 ms.</li>
+</ul>
+<p>In addition, MATLAB code for analysis of recording transmission and code for the new tracking methods in ATLAS were written. The prototype is able to transmit successfully, and the transmissions can be detected by ATLAS tracking code.</p>
+<p>This project was done as part of the <a href="https://sivantoledoacademic.wordpress.com/teaching/advanced-computer-systems-fall-2017/">Advanced Computer Systems</a> course (Prof Sivan Toledo, Tel Aviv University).</p>
+<p>-Andrey Leshenko</p>
+		</article>
+    </div>
+</body>
+</html>
