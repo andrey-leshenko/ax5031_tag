@@ -218,7 +218,13 @@ void startupAndTransmit(SPI_Handle handle)
 
 	// 3. Set TXPWR according to the desired output
 
-	// TODO: Add code for setting the power
+	{
+		// from 0b000 to 0b1111
+		const uint8_t power = 0b0110;
+
+		uint8_t tx_power_address = 0x30;
+		axWrite(handle, tx_power_address, power);
+	}
 
 	// 4. Fsk Deviation, skipped here
 
